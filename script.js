@@ -505,6 +505,15 @@ function phoneLike(str) {
   return digits.length >= 8;
 }
 
+// Divide um trecho pelo primeiro separador secundário encontrado (tab, " | " ou " - ").
+// Usado para separar nome e telefone quando a vírgula não foi usada para isso.
+function splitSecundario(chunk) {
+  if (chunk.includes("\t")) return chunk.split("\t").map((p) => p.trim()).filter(Boolean);
+  if (/ \| /.test(chunk)) return chunk.split(/ \| /).map((p) => p.trim()).filter(Boolean);
+  if (/ - /.test(chunk)) return chunk.split(/ - /).map((p) => p.trim()).filter(Boolean);
+  return [chunk.trim()];
+}
+
 function parseWhatsappList(text) {
   const lines = text
     .split("\n")
@@ -512,25 +521,35 @@ function parseWhatsappList(text) {
     .filter((l) => l.length > 0);
 
   return lines.map((line) => {
-    const cleaned = line.replace(/^\s*(\d+[.)]|[-•*])\s*/, "");
-    const parts = cleaned.split(",").map((p) => p.trim());
+    // remove numeração, marcadores e emojis comuns do início da linha (ex: "1.", "1)", "1 -", "-", "•", "*", "✅")
+    let cleaned = line.replace(/^[\s\-•*✅✔☑️➡️👉📌.]*\d*[\s.\-)]*[\s\-•*✅✔☑️➡️👉📌]*/u, "");
+    if (cleaned.trim().length === 0) cleaned = line.trim(); // nunca deixa a linha vazia por engano
 
-    let nome = parts[0] || "";
+    // primeiro separa por vírgula; depois, se o primeiro pedaço ainda tiver
+    // um separador secundário (traço, tab ou " | "), separa nome e telefone dele também
+    const commaParts = cleaned.split(",").map((p) => p.trim()).filter(Boolean);
+    const firstChunk = splitSecundario(commaParts[0] || "");
+
+    let nome = firstChunk[0] || "";
     let telefone = "";
-    let categoria = "";
+    const extras = [];
 
-    if (parts.length >= 3) {
-      telefone = formatPhone(parts[1] || "");
-      categoria = parts.slice(2).join(", ");
-    } else if (parts.length === 2) {
-      if (phoneLike(parts[1])) {
-        telefone = formatPhone(parts[1]);
+    if (firstChunk.length >= 2 && phoneLike(firstChunk[1])) {
+      telefone = formatPhone(firstChunk[1]);
+      extras.push(...firstChunk.slice(2));
+    } else if (firstChunk.length >= 2) {
+      extras.push(...firstChunk.slice(1));
+    }
+
+    for (let i = 1; i < commaParts.length; i++) {
+      if (!telefone && phoneLike(commaParts[i])) {
+        telefone = formatPhone(commaParts[i]);
       } else {
-        categoria = parts[1];
+        extras.push(commaParts[i]);
       }
     }
 
-    return { nome, telefone, categoria };
+    return { nome, telefone, categoria: extras.filter(Boolean).join(", ") };
   });
 }
 
